@@ -604,12 +604,14 @@ proto_reg_handoff_zbee_zcl_thermostat(void)
 #define ZBEE_ZCL_ATTR_ID_IAS_ZONE_TYPE          0x0001
 #define ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATUS        0x0002
 #define ZBEE_ZCL_ATTR_ID_IAS_CIE_ADDRESS        0x0010
+#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID            0x0011
 
 static const value_string zbee_zcl_ias_zone_attr_names[] = {
     { ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATE,          "ZoneState" },
     { ZBEE_ZCL_ATTR_ID_IAS_ZONE_TYPE,           "ZoneType" },
     { ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATUS,         "ZoneStatus" },
     { ZBEE_ZCL_ATTR_ID_IAS_CIE_ADDRESS,         "IAS_CIE_Address" },
+    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID,             "ZoneID" },
     { 0, NULL }
 };
 
@@ -635,6 +637,8 @@ static const value_string zbee_ias_state_names[] = {
 #define ZBEE_IAS_ZONE_TYPE_KEY_FOB              0x0115
 #define ZBEE_IAS_ZONE_TYPE_KEYPAD               0x021D
 #define ZBEE_IAS_ZONE_TYPE_STANDARD_WARNING     0x0225
+#define ZBEE_IAS_ZONE_TYPE_GLASS_BREAK_SENSOR   0x0226
+#define ZBEE_IAS_ZONE_TYPE_SECURITY_REPEATER    0x0229
 #define ZBEE_IAS_ZONE_TYPE_INVALID_ZONE_TYPE    0xFFFF
 
 #define ZBEE_IAS_ZONE_STATUS_ALARM1             0x0001
@@ -645,6 +649,8 @@ static const value_string zbee_ias_state_names[] = {
 #define ZBEE_IAS_ZONE_STATUS_RESTORE            0x0020
 #define ZBEE_IAS_ZONE_STATUS_TROUBLE            0x0040
 #define ZBEE_IAS_ZONE_STATUS_AC_MAINS           0x0080
+#define ZBEE_IAS_ZONE_STATUS_TEST_MODE          0x0100
+#define ZBEE_IAS_ZONE_STATUS_BATTERY_DEFECT     0x0200
 
 static const value_string zbee_ias_type_names[] = {
     { ZBEE_IAS_ZONE_TYPE_STANDARD_CIE,          "Standard CIE" },
@@ -659,6 +665,8 @@ static const value_string zbee_ias_type_names[] = {
     { ZBEE_IAS_ZONE_TYPE_KEY_FOB,               "Key fob" },
     { ZBEE_IAS_ZONE_TYPE_KEYPAD,                "Keypad" },
     { ZBEE_IAS_ZONE_TYPE_STANDARD_WARNING,      "Standard warning device" },
+    { ZBEE_IAS_ZONE_TYPE_GLASS_BREAK_SENSOR,    "Glass break sensor" },
+    { ZBEE_IAS_ZONE_TYPE_SECURITY_REPEATER,     "Security repeater" },
     { ZBEE_IAS_ZONE_TYPE_INVALID_ZONE_TYPE,     "Invalid zone type" },
     { 0, NULL }
 };
@@ -712,6 +720,8 @@ static int hf_zbee_zcl_ias_zone_status_restore_reports = -1;
 static int hf_zbee_zcl_ias_zone_status_supervision_reports = -1;
 static int hf_zbee_zcl_ias_zone_status_tamper = -1;
 static int hf_zbee_zcl_ias_zone_status_trouble = -1;
+static int hf_zbee_zcl_ias_zone_status_test = -1;
+static int hf_zbee_zcl_ias_zone_status_battery_defect = -1;
 
 static const true_false_string tfs_ac_mains = {
     "AC/Mains fault",
@@ -745,6 +755,16 @@ static const true_false_string tfs_tampered_or_not = {
 
 static const true_false_string tfs_trouble_failure = {
     "Trouble/Failure",
+    "OK"
+};
+
+static const true_false_string tfs_test = {
+    "Test mode",
+    "Operation mode"
+};
+
+static const true_false_string tfs_battery_defect = {
+    "Defective battery",
     "OK"
 };
 
@@ -785,6 +805,8 @@ dissect_zcl_ias_zone_status(proto_tree *tree, tvbuff_t *tvb, guint offset)
         &hf_zbee_zcl_ias_zone_status_restore_reports,
         &hf_zbee_zcl_ias_zone_status_trouble,
         &hf_zbee_zcl_ias_zone_status_ac_mains,
+        &hf_zbee_zcl_ias_zone_status_test,
+        &hf_zbee_zcl_ias_zone_status_battery_defect,
         NULL
     };
 
@@ -898,6 +920,11 @@ dissect_zcl_ias_zone_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, g
             *offset += 2;
             break;
 
+        case ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID:
+            proto_tree_add_item(tree, hf_zbee_zcl_ias_zone_zone_id, tvb, *offset, 1, ENC_NA);
+            *offset += 1;
+            break;
+
         case ZBEE_ZCL_ATTR_ID_IAS_CIE_ADDRESS:
         default:
             dissect_zcl_attr_data(tvb, tree, offset, data_type);
@@ -1004,7 +1031,15 @@ proto_register_zbee_zcl_ias_zone(void)
 
         { &hf_zbee_zcl_ias_zone_status_ac_mains,
             { "AC (mains)", "zbee_zcl_ias.zone.status.ac_mains", FT_BOOLEAN, 16, TFS(&tfs_ac_mains), ZBEE_IAS_ZONE_STATUS_AC_MAINS, NULL,
-                HFILL }}
+              HFILL }},
+
+        { &hf_zbee_zcl_ias_zone_status_test,
+            { "Test", "zbee_zcl_ias.zone.status.test", FT_BOOLEAN, 16, TFS(&tfs_test), ZBEE_IAS_ZONE_STATUS_TEST_MODE, NULL,
+              HFILL }},
+
+        { &hf_zbee_zcl_ias_zone_status_battery_defect,
+            { "Battery Defect", "zbee_zcl_ias.zone.status.battery_defect", FT_BOOLEAN, 16,
+                TFS(&tfs_battery_defect), ZBEE_IAS_ZONE_STATUS_BATTERY_DEFECT, NULL, HFILL }},
     };
 
     /* ZCL IAS Zone subtrees */
