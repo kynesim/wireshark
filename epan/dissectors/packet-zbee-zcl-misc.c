@@ -600,18 +600,22 @@ proto_reg_handoff_zbee_zcl_thermostat(void)
 #define ZBEE_ZCL_IAS_ZONE_NUM_ETT               2
 
 /* IAS Zone Server Attributes */
-#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATE         0x0000
-#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_TYPE          0x0001
-#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATUS        0x0002
-#define ZBEE_ZCL_ATTR_ID_IAS_CIE_ADDRESS        0x0010
-#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID            0x0011
+#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATE             0x0000
+#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_TYPE              0x0001
+#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATUS            0x0002
+#define ZBEE_ZCL_ATTR_ID_IAS_CIE_ADDRESS            0x0010
+#define ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID                0x0011
+#define ZBEE_ZCL_ATTR_ID_IAS_NUM_ZONE_SENSE_LVLS    0x0012
+#define ZBEE_ZCL_ATTR_ID_IAS_CURRENT_ZONE_SENSE_LVL 0x0013
 
 static const value_string zbee_zcl_ias_zone_attr_names[] = {
-    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATE,          "ZoneState" },
-    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_TYPE,           "ZoneType" },
-    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATUS,         "ZoneStatus" },
-    { ZBEE_ZCL_ATTR_ID_IAS_CIE_ADDRESS,         "IAS_CIE_Address" },
-    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID,             "ZoneID" },
+    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATE,             "ZoneState" },
+    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_TYPE,              "ZoneType" },
+    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_STATUS,            "ZoneStatus" },
+    { ZBEE_ZCL_ATTR_ID_IAS_CIE_ADDRESS,            "IAS_CIE_Address" },
+    { ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID,                "ZoneID" },
+    { ZBEE_ZCL_ATTR_ID_IAS_NUM_ZONE_SENSE_LVLS,    "NumberOfZoneSensitivityLevelsSupported" },
+    { ZBEE_ZCL_ATTR_ID_IAS_CURRENT_ZONE_SENSE_LVL, "CurrentZoneSensitivityLevel" },
     { 0, NULL }
 };
 
@@ -682,8 +686,12 @@ static const value_string zbee_zcl_ias_zone_srv_tx_cmd_names[] = {
 
 /* Client-to-server command IDs. */
 #define ZBEE_ZCL_CMD_ID_IAS_ZONE_ENROLL_RESPONSE    0x00
+#define ZBEE_ZCL_CMD_ID_IAS_ZONE_NORMAL_MODE        0x01
+#define ZBEE_ZCL_CMD_ID_IAS_ZONE_TEST_MODE          0x02
 static const value_string zbee_zcl_ias_zone_srv_rx_cmd_names[] = {
     { ZBEE_ZCL_CMD_ID_IAS_ZONE_ENROLL_RESPONSE, "Zone Enroll Response" },
+    { ZBEE_ZCL_CMD_ID_IAS_ZONE_NORMAL_MODE,     "Initialise Normal Operation Mode" },
+    { ZBEE_ZCL_CMD_ID_IAS_ZONE_TEST_MODE,       "Initiate Test Mode" },
     { 0, NULL }
 };
 
@@ -722,6 +730,9 @@ static int hf_zbee_zcl_ias_zone_status_tamper = -1;
 static int hf_zbee_zcl_ias_zone_status_trouble = -1;
 static int hf_zbee_zcl_ias_zone_status_test = -1;
 static int hf_zbee_zcl_ias_zone_status_battery_defect = -1;
+static int hf_zbee_zcl_ias_zone_duration = -1;
+static int hf_zbee_zcl_ias_zone_sensitivity = -1;
+static int hf_zbee_zcl_ias_zone_num_sensitivity = -1;
 
 static const true_false_string tfs_ac_mains = {
     "AC/Mains fault",
@@ -855,6 +866,14 @@ dissect_zbee_zcl_ias_zone(tvbuff_t *tvb, packet_info *pinfo, proto_tree *tree, v
                 offset++;
                 break;
 
+            case ZBEE_ZCL_CMD_ID_IAS_ZONE_TEST_MODE:
+                proto_tree_add_item(tree, hf_zbee_zcl_ias_zone_duration, tvb, offset, 1, ENC_NA);
+                offset++;
+                proto_tree_add_item(tree, hf_zbee_zcl_ias_zone_sensitivity, tvb, offset, 1, ENC_NA);
+                offset++;
+                break;
+
+            case ZBEE_ZCL_CMD_ID_IAS_ZONE_NORMAL_MODE:
             default:
                 break;
         } /* switch */
@@ -922,6 +941,16 @@ dissect_zcl_ias_zone_attr_data(proto_tree *tree, tvbuff_t *tvb, guint *offset, g
 
         case ZBEE_ZCL_ATTR_ID_IAS_ZONE_ID:
             proto_tree_add_item(tree, hf_zbee_zcl_ias_zone_zone_id, tvb, *offset, 1, ENC_NA);
+            *offset += 1;
+            break;
+
+        case ZBEE_ZCL_ATTR_ID_IAS_NUM_ZONE_SENSE_LVLS:
+            proto_tree_add_item(tree, hf_zbee_zcl_ias_zone_num_sensitivity, tvb, *offset, 1, ENC_NA);
+            *offset += 1;
+            break;
+
+        case ZBEE_ZCL_ATTR_ID_IAS_CURRENT_ZONE_SENSE_LVL:
+            proto_tree_add_item(tree, hf_zbee_zcl_ias_zone_sensitivity, tvb, *offset, 1, ENC_NA);
             *offset += 1;
             break;
 
@@ -1040,6 +1069,18 @@ proto_register_zbee_zcl_ias_zone(void)
         { &hf_zbee_zcl_ias_zone_status_battery_defect,
             { "Battery Defect", "zbee_zcl_ias.zone.status.battery_defect", FT_BOOLEAN, 16,
                 TFS(&tfs_battery_defect), ZBEE_IAS_ZONE_STATUS_BATTERY_DEFECT, NULL, HFILL }},
+
+        { &hf_zbee_zcl_ias_zone_duration,
+          { "Test Mode Duration (in seconds)", "zbee_zcl_ias.zone.duration", FT_UINT8, BASE_DEC, NULL, 0x0, NULL,
+            HFILL }},
+
+        { &hf_zbee_zcl_ias_zone_sensitivity,
+          { "Zone Sensitivity Level", "zbee_zcl_ias.zone.sensitivity", FT_UINT8, BASE_DEC, NULL, 0x0, NULL,
+            HFILL }},
+
+        { &hf_zbee_zcl_ias_zone_num_sensitivity,
+          { "Number of Zone Sensitivity Levels", "zbee_zcl_ias.zone.num_sensitivity", FT_UINT8, BASE_DEC, NULL,
+            0x0, NULL, HFILL }}
     };
 
     /* ZCL IAS Zone subtrees */
