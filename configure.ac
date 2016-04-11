@@ -602,7 +602,7 @@ fi
 
 # libgrypt
 gcrypt_message="no"
-want_gcrypt="if_available"
+want_gcrypt="yes"
 AC_ARG_WITH([gcrypt],
   AC_HELP_STRING( [--with-gcrypt=@<:@yes/no@:>@],
 		  [use gcrypt library @<:@default=yes, if available@:>@]),
