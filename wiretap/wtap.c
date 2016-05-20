@@ -921,7 +921,10 @@ static struct encap_type_info encap_table_base[] = {
 	{ "ITU-T G.7041/Y.1303 Generic Framing Procedure Transparent mode", "gfp-t" },
 
 	/* WTAP_ENCAP_GFP_F */
-	{ "ITU-T G.7041/Y.1303 Generic Framing Procedure Frame-mapped mode", "gfp-f" }
+	{ "ITU-T G.7041/Y.1303 Generic Framing Procedure Frame-mapped mode", "gfp-f" },
+
+	/* WTAP_ENCAP_IP_OVER_IB */
+	{ "IP over IB", "ip-ib" }
 
 };
 
@@ -1192,6 +1195,9 @@ wtap_close(wtap *wth)
 
 	if (wth->priv != NULL)
 		g_free(wth->priv);
+
+	if (wth->filename != NULL) 
+		g_free(wth->filename);
 
 	if (wth->fast_seek != NULL) {
 		g_ptr_array_foreach(wth->fast_seek, g_fast_seek_item_free, NULL);

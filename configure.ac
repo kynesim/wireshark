@@ -791,6 +791,68 @@ AC_PATH_PROG(XSLTPROC, xsltproc)
 AC_CHECK_PROG(HAVE_XSLTPROC, xsltproc, "yes", "no")
 AM_CONDITIONAL(HAVE_XSLTPROC, test x$HAVE_XSLTPROC = xyes)
 
+# Check for sqlite3
+sqlite3_message="no"
+want_sqlite3="yes"
+AC_ARG_WITH([sqlite3],
+ AC_HELP_STRING( [--with-sqlite3=@<:yes/no@:>@],
+                 [use sqlite3 @<:@default=yes, if available@:>@]),
+ [ with_sqlite3="$withval"; want_sqlite3="yes"], with_sqlite3="yes")
+if test "x$with_sqlite3" = "xyes"; then
+  AC_CHECK_LIB(sqlite3, sqlite3_open,
+        [
+              AC_DEFINE(HAVE_SQLITE3, 1, [Define to use sqlite3])
+              sqlite3_message="yes"
+              LIBS="$LIBS -lsqlite3"
+        ]
+	, [
+		if test x$sqlite3_config_prefix != x ; then
+			AC_MSG_ERROR([[sqlite3 not found; install libsqlite3-dev for your system]])
+		else
+			AS_ECHO(["sqlite3 not found, disabling Ubiqua CUBX format"])
+			sqlite3_message="no"
+		fi
+
+		# Error out if the user explicitly requested gcrypt
+		if test "x$want_sqlite3" = "xyes"; then
+		    AC_MSG_ERROR([sqlite3 was requested, but is not available])
+		fi
+	]
+  )
+fi
+
+# Check for zziplib
+zziplib_message="no"
+want_zziplib="yes"
+AC_ARG_WITH([zziplib],
+ AC_HELP_STRING( [--with-zziplib=@<:yes/no@:>@],
+                 [use zziplib library @<:@default=yes, if available@:>@]),
+ [ with_zziplib="$withval"; want_zziplib="yes"], with_zziplib="yes")
+if test "x$with_zziplib" = "xyes"; then
+   AC_CHECK_LIB(zzip, zzip_file_read, 
+        [
+              AC_DEFINE(HAVE_ZZIPLIB, 1, [Define to use zziplib])
+              LIBS="$LIBS -lzzip"
+              zziplib_message="yes"
+        ]
+	, [
+		if test x$zziplib_config_prefix != x ; then
+			AC_MSG_ERROR([[zziplib not found; install it from sourceforge]])
+		else
+			AS_ECHO(["zziplib not found, disabling Ember ISD format"])
+			zziplib_message="no"
+		fi
+
+		# Error out if the user explicitly requested gcrypt
+		if test "x$want_zziplib" = "xyes"; then
+		    AC_MSG_ERROR([zziplib library was requested, but is not available])
+		fi
+	]
+  )
+fi
+
+
+ 
 
 # Check for packaging utilities
 # For now, we check to see if the various packaging utilites are in our
@@ -3370,4 +3432,6 @@ echo "                 Use libssh library : $libssh_message"
 echo "            Have ssh_userauth_agent : $ssh_userauth_agent_message"
 echo "                     Use nl library : $libnl_message"
 echo "              Use SBC codec library : $have_sbc"
+echo "                        Use sqlite3 : $sqlite3_message"
+echo "                   Use zzip library : $zziplib_message"
 #echo "       Use GDK-Pixbuf with GResource: $have_gresource_pixbuf"

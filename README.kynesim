@@ -1,0 +1,13 @@
+Some notes on Kynesim's Wireshark fork:
+
+ - You will want to do:
+
+apt-get install libgtk-3-dev libpcap-dev
+
+ - You will need to install zzlib-lib from 
+<http://zziplib.sourceforge.net/> 0.13.62 
+seems to work.
+
+ - You will need to install
+
+apt-get install libsqlite3-dev
