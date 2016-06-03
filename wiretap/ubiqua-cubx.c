@@ -56,6 +56,7 @@ int ubiqua_cubx_open(wtap *wth, int *err, gchar **err_info)
 	if (file_read(&buf, 15, wth->fh) < 15)
             goto exit_not_cubx;
 
+
 	if (strncmp(buf, "SQLite format 3", 15))
             goto exit_not_cubx;
 
@@ -86,7 +87,7 @@ int ubiqua_cubx_open(wtap *wth, int *err, gchar **err_info)
 	wth->file_encap = WTAP_ENCAP_IEEE802_15_4;
 	wth->file_tsprec = WTAP_TSPREC_USEC;
         
-	return WTAP_OPEN_MINE; /* it's a Daintree file */
+	return WTAP_OPEN_MINE; /* it's a CUBX file */
 
 exit_close:
 	sqlite3_close(priv->db);
@@ -106,6 +107,7 @@ ubiqua_cubx_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
 	int len;
 	uint8_t* frame;
 
+
 	if (SQLITE_ROW != priv->step_result) {
 		sqlite3_finalize(priv->stmt);
 		//how to say no error ?
@@ -114,6 +116,7 @@ ubiqua_cubx_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
 	}
 
 	*data_offset = sqlite3_column_int(priv->stmt, 0);
+
 	timestamp = sqlite3_column_double(priv->stmt, 2);
 	len = sqlite3_column_bytes(priv->stmt, 1);
 	wth->phdr.presence_flags = WTAP_HAS_TS;
@@ -127,7 +130,7 @@ ubiqua_cubx_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
 	memcpy(frame, sqlite3_column_blob(priv->stmt, 1), len);
 
 	if (len >= 2) {
-		frame[wth->phdr.caplen - 2] = sqlite3_column_int(priv->stmt, 3);
+		frame[len - 2] = sqlite3_column_int(priv->stmt, 3);
 	}
 
 	priv->step_result = sqlite3_step(priv->stmt);
@@ -141,30 +144,32 @@ ubiqua_cubx_seek_read(wtap *wth, gint64 seek_off, struct wtap_pkthdr *phdr,
                       Buffer *buf, int *err, gchar **err_info) 
 {
 	struct cubx_priv *priv = (struct cubx_priv *)wth->priv;
-	sqlite3_stmt *stmt;
+	sqlite3_stmt *stmt = NULL;
 	const char *sql_t = "SELECT id,Raw,UnixTimeStamp,LinkQualityDBm FROM Packets WHERE id=%d";
-	char sql[64];
+	char sql[128];
         int len;
         uint8_t *frame;
         double timestamp;
+        int rv;
 
 	snprintf(sql, sizeof(sql), sql_t, seek_off);
-
-	if (SQLITE_OK != sqlite3_prepare_v2(priv->db, sql, -1, &stmt, 0)) {
-		*err = WTAP_ERR_INTERNAL;
-		*err_info = g_strdup_printf("ubiqua-cubx: bad request to database");
-		return FALSE;
+        
+        rv = sqlite3_prepare_v2(priv->db, sql, -1, &stmt, 0);
+	if (SQLITE_OK != rv) { 
+            *err = WTAP_ERR_INTERNAL;
+            *err_info = g_strdup_printf("ubiqua-cubx: bad request to database");
+            return FALSE;
 	}
 
 	if (SQLITE_ROW != sqlite3_step(stmt)) {
-		*err = WTAP_ERR_SHORT_READ;
-		*err_info = g_strdup_printf("ubiqua-cubx: cannot read packet from database");
-		sqlite3_finalize(stmt);
-		return FALSE;
+            *err = WTAP_ERR_SHORT_READ;
+            *err_info = g_strdup_printf("ubiqua-cubx: cannot read packet from database");
+            sqlite3_finalize(stmt);
+            return FALSE;
 	}
 
         len = sqlite3_column_bytes(stmt, 1);
-	timestamp = sqlite3_column_double(priv->stmt, 2);
+	timestamp = sqlite3_column_double(stmt, 2);
 	phdr->presence_flags = WTAP_HAS_TS;
 	phdr->ts.secs = timestamp;
 	phdr->ts.nsecs = 1000000000ul * (timestamp - wth->phdr.ts.secs);
@@ -173,10 +178,10 @@ ubiqua_cubx_seek_read(wtap *wth, gint64 seek_off, struct wtap_pkthdr *phdr,
 
 	ws_buffer_assure_space(buf, len);
 	frame = ws_buffer_start_ptr(buf);
-	memcpy(frame, sqlite3_column_blob(priv->stmt, 1), len);
+	memcpy(frame, sqlite3_column_blob(stmt, 1), len);
 
 	if (len >= 2) {
-		frame[phdr->caplen - 2] = sqlite3_column_int(priv->stmt, 3);
+		frame[len-2] = sqlite3_column_int(stmt, 3);
 	}
 
 	sqlite3_finalize(stmt);
