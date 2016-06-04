@@ -28,6 +28,8 @@
 #include "file_wrappers.h"
 #include "ti-smartrf.h"
 
+#define DEBUG0 0
+
 static gboolean ti_smartrf_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset);
 
 static gboolean ti_smartrf_seek_read(wtap *wth, gint64 seek_off,
@@ -69,10 +71,18 @@ static gboolean read_record(
 {
 	int sz = priv->record_size;
 
+#if DEBUG0
+        printf("%s: %d sz %d\n", __func__, 0, sz);
+#endif
+
 	if (file_read(data, sz, fh) < sz) {
 		*err = file_error(fh, err_info);
 		return FALSE;
 	}
+
+#if DEBUG0
+    printf("%s: %d\n", __func__, 1);
+#endif
 
 	if (usec) {
 		*usec = 0;
@@ -80,12 +90,24 @@ static gboolean read_record(
 		*usec /= priv->time_scale;
 	}
 
+#if DEBUG0
+    printf("%s: %d\n", __func__, 2);
+#endif
+
 	*len = data[priv->payload_offset - 1];
 	if ((2 == priv->ver) && (0 == (data[0] & 1))) /* frame len without fcs */
 		*len += 2;
+#if DEBUG0
+        printf("%s: payload_offset %d, len %d \n",__func__, priv->payload_offset, (*len));
+#endif
+
 
 	if (*len < 3 || *len >= 128)
 		return FALSE;
+#if DEBUG0
+    printf("%s: %d\n", __func__, 3);
+#endif
+
 
 	return TRUE;
 }
@@ -108,6 +130,11 @@ int ti_smartrf_open(wtap *wth, int *err, gchar **err_info)
 
         (void) err_info;
 
+#if DEBUG0
+        printf("%s: %d\n", __func__, 0);
+#endif
+
+
 	if (file_read(&rec_count, 4, wth->fh) < 4) {
             return WTAP_OPEN_NOT_MINE;
         }
@@ -121,6 +148,10 @@ int ti_smartrf_open(wtap *wth, int *err, gchar **err_info)
 
 	/* check and tune to cc2420 file format */
 	if (rec_count * SNIFFER_2420_RECORD_SIZE + SNIFFER_2420_HEADER_SIZE == file_size) {
+#if DEBUG0
+            printf("CC2420 format.\n");
+#endif
+
 		priv->record_size = SNIFFER_2420_RECORD_SIZE;
 		priv->payload_offset = 1;
 		priv->time_size = 4;
@@ -135,6 +166,10 @@ int ti_smartrf_open(wtap *wth, int *err, gchar **err_info)
 
 	/* check and tune to 2531 and other rf studio file formats */
 	if (0 == (file_size % SNIFFER_RFST_RECORD_SIZE)) {
+#if DEBUG0
+            printf("CC2531 format.\n");
+#endif
+
 		priv->record_size = SNIFFER_RFST_RECORD_SIZE;
 		priv->payload_offset = 14;
 		priv->time_size = 8;
@@ -174,8 +209,13 @@ ti_smartrf_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
 	guchar  data[MAX_SIZE];
 	guint64 usecs;
 	int     len;
+        unsigned char *p;
 
 	*data_offset = file_tell(wth->fh);
+
+#if DEBUG0
+        printf("%s: %d\n", __func__, 0);
+#endif
 
 	if (!read_record(priv, wth->fh, data, &len, &usecs, err, err_info))
 		return FALSE;
@@ -187,7 +227,12 @@ ti_smartrf_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
 	wth->phdr.len = len;
 	wth->phdr.caplen = len;
 	ws_buffer_assure_space(wth->frame_buffer, len);
-	memcpy(ws_buffer_start_ptr(wth->frame_buffer), data + priv->payload_offset, len);
+        p = ws_buffer_start_ptr(wth->frame_buffer);
+	memcpy(p, data + priv->payload_offset, len);
+#if DEBUG0
+        printf("%s: %02x %02x %02x \n", __func__, p[0], p[1], p[2]);
+#endif
+
 
 	return TRUE;
 }
@@ -205,9 +250,14 @@ ti_smartrf_seek_read(wtap *wth, gint64 seek_off,
     guchar  data[MAX_SIZE];
     guint64 usecs;
     int     len;
+
+#if DEBUG0
+    printf("%s: %d\n", __func__, 0);
+#endif
+
     
     if (file_seek(wth->random_fh, seek_off, SEEK_SET, err) < 0) {
-        // *err = file_error(wth->random_fh, err_info);
+        *err = file_error(wth->random_fh, err_info);
         return FALSE;
     }
     
@@ -222,7 +272,7 @@ ti_smartrf_seek_read(wtap *wth, gint64 seek_off,
     phdr->caplen = len;
 
     ws_buffer_assure_space(buf, len);
-    if (!memcpy(ws_buffer_start_ptr(buf), data, len)) 
+    if (!memcpy(ws_buffer_start_ptr(buf), data + priv->payload_offset, len)) 
         return FALSE;
     
 
