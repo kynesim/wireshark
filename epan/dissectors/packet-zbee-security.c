@@ -39,6 +39,8 @@
  */
 #include <wsutil/wsgcrypt.h>
 
+#include "wiretap/wtap.h"
+
 #include "packet-ieee802154.h"
 #include "packet-zbee.h"
 #include "packet-zbee-nwk.h"
@@ -133,6 +135,7 @@ UAT_VS_DEF(uat_key_records, byte_order, uat_key_record_t, guint8, 0, "Normal")
 UAT_CSTRING_CB_DEF(uat_key_records, label, uat_key_record_t)
 
 static GSList           *zbee_pc_keyring = NULL;
+static GSList           *zbee_ext_keyring = NULL;
 static uat_key_record_t *uat_key_records = NULL;
 static guint             num_uat_key_records = 0;
 
@@ -209,6 +212,33 @@ static void uat_key_record_post_update(void) {
             zbee_pc_keyring = g_slist_prepend(zbee_pc_keyring, g_memdup(&key_record, sizeof(key_record_t)));
         }
     }
+}
+
+gboolean zbee_sec_load_ext_keys(  gchar **keys, 
+                                 const guint * key_type,
+                                 guint nr_keys ) {
+    guint i;
+    key_record_t key_record;
+    guint8 key[ZBEE_SEC_CONST_KEYSIZE];
+
+    (void) key_type;
+
+    if (zbee_ext_keyring) { 
+        g_slist_free(zbee_ext_keyring);
+        zbee_ext_keyring = NULL;
+    }
+
+    /* Load external security keys */
+    for (i = 0; i  < nr_keys; ++i) {
+        key_record.frame_num = ZBEE_SEC_PC_KEY; /* Not present in the stream */
+        key_record.label = g_strdup_printf("Ext%d", i);
+        if (zbee_security_parse_key( keys[i], key, 0 ) ) {
+            memcpy(&key_record.key, key, ZBEE_SEC_CONST_KEYSIZE);
+            zbee_ext_keyring = g_slist_prepend(zbee_ext_keyring, 
+                                               g_memdup(&key_record, sizeof(key_record_t)));
+        }
+    }
+    return TRUE;
 }
 
 /*
@@ -335,6 +365,7 @@ void zbee_security_register(module_t *zbee_prefs, int proto)
     proto_register_subtree_array(ett, array_length(ett));
     expert_zbee_sec = expert_register_protocol(proto);
     expert_register_field_array(expert_zbee_sec, ei, array_length(ei));
+    wtap_register_zbee_ext_keys( zbee_sec_load_ext_keys );
 
 } /* zbee_security_register */
 
@@ -706,6 +737,29 @@ dissect_zbee_secure(tvbuff_t *tvb, packet_info *pinfo, proto_tree* tree, guint o
                         }
                     }
                 }
+
+                /* Now try the external keys */
+                GSList_i = zbee_ext_keyring;
+                while ( GSList_i && !decrypted ) {
+                    decrypted = zbee_sec_decrypt_payload( &packet, enc_buffer, offset, dec_buffer,
+                            payload_len, mic_len, ((key_record_t *)(GSList_i->data))->key);
+
+                    if (decrypted) {
+                        /* save pointer to the successful key record */
+                        switch (packet.key_id) {
+                            case ZBEE_SEC_KEY_NWK:
+                                key_rec = nwk_hints->nwk = (key_record_t *)(GSList_i->data);
+                                break;
+
+                            default:
+                                key_rec = nwk_hints->link = (key_record_t *)(GSList_i->data);
+                                break;
+                        }
+                    } else {
+                        GSList_i = g_slist_next(GSList_i);
+                    }
+                }
+
 
                 /* Loop through user's password table for preconfigured keys, our last resort */
                 GSList_i = zbee_pc_keyring;

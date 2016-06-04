@@ -47,6 +47,7 @@ typedef struct {
 } wtap_plugin;
 
 static GSList *wtap_plugins = NULL;
+static wtap_zbee_ext_keys_fn_t wtap_zbee_ext_fn;
 
 /*
  * Callback for each plugin found.
@@ -1429,6 +1430,14 @@ wtap_seek_read(wtap *wth, gint64 seek_off,
 	g_assert(phdr->pkt_encap != WTAP_ENCAP_PER_PACKET);
 
 	return TRUE;
+}
+
+void wtap_register_zbee_ext_keys(wtap_zbee_ext_keys_fn_t fn) {
+	wtap_zbee_ext_fn= fn;
+}
+
+wtap_zbee_ext_keys_fn_t wtap_get_zbee_ext_keys(void) {
+	return wtap_zbee_ext_fn;
 }
 
 /*

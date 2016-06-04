@@ -31,6 +31,13 @@
 #include "ubiqua-cubx.h"
 #include "sqlite3.h"
 
+#define DEBUG0 0
+
+/* Ugh! */
+extern gboolean zbee_sec_load_ext_keys( gchar ** keys,
+                                        const guint * key_type,
+                                        guint nr_keys );
+
 static gboolean ubiqua_cubx_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset);
 
 static gboolean ubiqua_cubx_seek_read(wtap *wth, gint64 seek_off,
@@ -39,18 +46,59 @@ static gboolean ubiqua_cubx_seek_read(wtap *wth, gint64 seek_off,
                                       int *err,
                                       gchar **err_info);
 
+/* There are two versions of CUBX file; the newer (which we call v1) contains a Packets table like
+ * 
+ * CREATE TABLE [Packets] ([Id] INTEGER PRIMARY KEY AUTOINCREMENT, [Raw] BLOB, [Protocol] TEXT, [Length] TEXT, [Channel] TEXT, [Comment] TEXT, [TimeStampValue] TEXT, [UnixTimeStamp] TEXT, [UTCDateTime] TEXT, [TimeDeltaValue] TEXT, [LongAddr] TEXT, [LinkQuality] TEXT, [LinkQualityDBm] TEXT, [Metadata] TEXT);
+ *
+ *  .. and the older (v0) contains 
+ *
+ *  CREATE TABLE [Packets] ([Id] Integer PRIMARY KEY AUTOINCREMENT, [Raw] BLOB, [Stack] INTEGER, [Channel] INTEGER, [Timestamp] REAL, [TimeDelta] REAL, [LQI] INTEGER, [RSSI] INTEGER, [Comment] TEXT);
+ * 
+ * Annoyingly, Ubiqua has the ability to transport security keys separately. We may one day arrange
+ * to load them, but for now we simply print them in the hope that the user can load them into
+ * the preferences explicitly - we have no such access.
+ */
 struct cubx_priv {
-	sqlite3 *db;
-	sqlite3_stmt *stmt;
-	int step_result;
+    sqlite3 *db;
+    sqlite3_stmt *stmt;
+    int step_result;
+    /* Version is 0 for v0 files, 1 for v1 files */
+    int version;
 };
+
+static const char *sql_order_by_id[] = {
+    "SELECT id,Raw,UnixTimeStamp,LinkQualityDBm FROM Packets ORDER BY id",
+     "SELECT id,Raw,Timestamp,LQI FROM Packets ORDER BY id" 
+};     
+
+static const char *sql_find_id[] = { 
+    "SELECT id,Raw,UnixTimeStamp,LinkQualityDBm FROM Packets WHERE id=%d",
+    "SELECT id,Raw,Timestamp,LQI FROM Packets WHERE id=%d" 
+};
+
+static const char *sql_count_keys[] = { 
+    "SELECT COUNT(*) from Keys",
+    "SELECT COUNT(*) from Keys" 
+};
+
+static const char *sql_list_keys[] = { 
+    "SELECT Key,Type from Keys",
+    "SELECT Key,Type from Keys"
+};
+
+static const char *sql_get_version="SELECT Value from Metadata where Key='FileFormat'";
 
 /* Open a file and determine if it's a ubiqua file */
 int ubiqua_cubx_open(wtap *wth, int *err, gchar **err_info)
 {
 	struct cubx_priv *priv;
 	char buf[32];
-	const char *sql = "SELECT id,Raw,UnixTimeStamp,LinkQualityDBm FROM Packets ORDER BY id";
+        sqlite3_stmt *vsn_stmt = NULL;
+        sqlite3_stmt *key_stmt = NULL;
+        int nr_keys = 0;
+        int i;
+        gchar **keys = NULL;
+        guint *key_types = NULL;
         (void) err_info;
 
 	if (file_read(&buf, 15, wth->fh) < 15)
@@ -66,32 +114,190 @@ int ubiqua_cubx_open(wtap *wth, int *err, gchar **err_info)
 	if (SQLITE_OK != sqlite3_errcode(priv->db))
 		goto exit_free_priv;
 
-	if (SQLITE_OK != sqlite3_prepare_v2(priv->db, sql, -1, &priv->stmt, 0))
-		goto exit_close;
+        /* Now, what version do we have? */
+        if (SQLITE_OK == sqlite3_prepare_v2(priv->db, sql_get_version, -1, &vsn_stmt, 0 )) { 
+            int vsn;
 
-	priv->step_result = sqlite3_step(priv->stmt);
-	if (SQLITE_ROW != priv->step_result) {
-		sqlite3_finalize(priv->stmt);
-		goto exit_close;
-	}
+            if (SQLITE_ROW != sqlite3_step(vsn_stmt)) {
+#if DEBUG0
+                printf("(no version row in table)\n");
+#endif
 
-	wth->priv = priv;
-	file_seek(wth->fh, 0, SEEK_SET, err);
+                vsn = 0;
+            } else {
+                vsn =sqlite3_column_int(vsn_stmt, 0); 
+            }
+            /* Check for version 1 */
+#if DEBUG0
+            printf("Version %d file.\n", vsn);
+#endif
 
-	/* set up the pointers to the handlers for this file type */
-	wth->subtype_read = ubiqua_cubx_read;
-	wth->subtype_seek_read = ubiqua_cubx_seek_read;
+            priv->version = vsn;
+            if (vsn != 0 && vsn != 1) { 
+                // we don't understand it.
+                (*err) = WTAP_OPEN_NOT_MINE;
+                (*err_info) = g_strdup_printf("ubiqua-cubx: This file is a CUBX with unrecognised version %d", vsn);
+                goto exit_free_priv;
+            }
+        } else {
+            /* Otherwise, this is a version 0 file .. */
+            priv->version = 0;
+        }
+       
+        /* Now, this is extremely nasty - we forcibly load any keys we find in the
+         * file into a private key set we share with packet-zbee-security 
+         */
+        if (SQLITE_OK != sqlite3_prepare_v2(priv->db, sql_count_keys[priv->version], -1, &key_stmt, 0)) {
+#if DEBUG0
+            printf("Cannot prepare keys\n");
+#endif
+            goto exit_close;
+        }
+        if (SQLITE_ROW != sqlite3_step(key_stmt))  {
+#if DEBUG0
+            printf("Cannot count keys\n");
+#endif
 
-	/* set up for file type */
-	wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_UBIQUA_CUBX;
-	wth->file_encap = WTAP_ENCAP_IEEE802_15_4;
-	wth->file_tsprec = WTAP_TSPREC_USEC;
+            goto exit_close;
+        }
+        nr_keys = sqlite3_column_int(key_stmt, 0);
+#if DEBUG0
+        printf("%d keys to load.\n", nr_keys);
+#endif
+        sqlite3_finalize(key_stmt); key_stmt = NULL;
+
+        /* Now load them */
+        if (SQLITE_OK != sqlite3_prepare_v2(priv->db, sql_list_keys[priv->version], -1, &key_stmt, 0)) {
+#if DEBUG0
+            printf("Cannot list keys prep\n");
+#endif
+
+            goto exit_close;
+        }
+        keys = (gchar **)g_malloc( nr_keys * sizeof(gchar *));
+        memset(keys, '\0', nr_keys * sizeof(gchar  *));
+        key_types = (guint *)g_malloc( nr_keys * sizeof(guint) );
+        for (i = 0; i < nr_keys; ++i) {
+            const gchar *type;
+            gchar *p;
+
+            if (SQLITE_ROW != sqlite3_step(key_stmt)) {
+#if DEBUG0
+                printf("Cannot step key %d\n", i);
+#endif
+
+                goto exit_close;
+            }
+
+            type = sqlite3_column_text(key_stmt, 1);
+            if (!strcmp(type, "LinkKey")) { 
+                key_types[i] = 0;
+            } else {
+                /* Must be network */
+                key_types[i] = 1;
+            }
+            
+           keys[i] = (gchar *)g_malloc(512);
+            p = keys[i]; 
+            if (priv->version == 1) { 
+                /*  Version 1 keys are binary - need to convert these to hex. */
+                const unsigned char *q = (const unsigned char *)sqlite3_column_blob(key_stmt, 0);
+                int nr = sqlite3_column_bytes(key_stmt, 0);
+                int j;
+                for (j = 0;j < nr; ++j, ++q) {
+                    if (j) { 
+                        p += sprintf(p, ":%02x", *q);
+                    } else {
+                        p += sprintf(p, "%02x", *q);
+                    }
+                }
+            } else {
+                /* Version 0 keys are hex - can just be used, but we do need to reformat
+                 *  first.
+                 */
+                int nr = sqlite3_column_bytes(key_stmt, 0);
+                const unsigned char * q = (const unsigned char *)sqlite3_column_blob(key_stmt, 0);
+                int j;
+
+                /* If we run over the end of q, all that happens is we copy a NUL */
+                /* Skip the initial 0x */
+                q += 2;
+                for (j =2; j < nr; j += 2) { 
+                    if (j > 2) { 
+                        /* Separator */
+                        *p++ = ':';
+                    }
+                    /* Hex digits */
+                    *p++ = *q++;
+                    *p++ = *q++;
+                }
+                /* Terminator */
+                *p = '\0';
+            }
+#if DEBUG0
+            printf("Got a key: type = %d, key = %s \n", key_types[i], 
+                   keys[i]);
+#endif
+
+        }
+        {
+            wtap_zbee_ext_keys_fn_t fn_p = wtap_get_zbee_ext_keys();
+            if (fn_p) { 
+#if DEBUG0
+                printf("Registering keys.\n");
+#endif
+
+                fn_p( keys, key_types, nr_keys);
+            } else {
+#if DEBUG0
+                printf("Cannot register keys - function not present.\n");
+#endif
+            }
+        }
+
+        /* TODO: do this more elegantly */
+        if (keys) { 
+            for (i =0 ;i < nr_keys; ++i) { 
+                g_free(keys[i]);
+            }
+            g_free(keys);
+        }
+        if (key_types) {  g_free(key_types); }
+          
+        if (SQLITE_OK != sqlite3_prepare_v2(priv->db, sql_order_by_id[priv->version], -1, &priv->stmt, 0))
+            goto exit_close;
         
-	return WTAP_OPEN_MINE; /* it's a CUBX file */
+        priv->step_result = sqlite3_step(priv->stmt);
+        if (SQLITE_ROW != priv->step_result) {
+            sqlite3_finalize(priv->stmt);
+            goto exit_close;
+        }
+        /* set up the pointers to the handlers for this file type */
+        wth->subtype_read = ubiqua_cubx_read;
+        wth->subtype_seek_read = ubiqua_cubx_seek_read;
 
+        wth->priv = priv;
+        file_seek(wth->fh, 0, SEEK_SET, err);
+        /* set up for file type */
+        wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_UBIQUA_CUBX;
+        wth->file_encap = WTAP_ENCAP_IEEE802_15_4;
+        wth->file_tsprec = WTAP_TSPREC_USEC;
+
+        return WTAP_OPEN_MINE; /* it's a CUBX file */
 exit_close:
+        if (keys) { 
+            for (i =0 ;i < nr_keys; ++i) { 
+                g_free(keys[i]);
+            }
+            g_free(keys);
+        }
+        if (key_types) {  g_free(key_types); }
+        if (priv->stmt) { sqlite3_finalize(priv->stmt); }
+        if (vsn_stmt) { sqlite3_finalize(vsn_stmt); }
+        if (key_stmt) { sqlite3_finalize(key_stmt); }
 	sqlite3_close(priv->db);
 exit_free_priv:
+        wth->priv = NULL;
 	g_free(priv);
 exit_not_cubx:
 	return WTAP_OPEN_NOT_MINE;
@@ -145,14 +351,13 @@ ubiqua_cubx_seek_read(wtap *wth, gint64 seek_off, struct wtap_pkthdr *phdr,
 {
 	struct cubx_priv *priv = (struct cubx_priv *)wth->priv;
 	sqlite3_stmt *stmt = NULL;
-	const char *sql_t = "SELECT id,Raw,UnixTimeStamp,LinkQualityDBm FROM Packets WHERE id=%d";
 	char sql[128];
         int len;
         uint8_t *frame;
         double timestamp;
         int rv;
-
-	snprintf(sql, sizeof(sql), sql_t, seek_off);
+        
+	snprintf(sql, sizeof(sql), sql_find_id[priv->version], seek_off);
         
         rv = sqlite3_prepare_v2(priv->db, sql, -1, &stmt, 0);
 	if (SQLITE_OK != rv) { 

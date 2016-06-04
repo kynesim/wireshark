@@ -79,6 +79,18 @@ extern void     zbee_security_register  (module_t *module, int proto);
 extern tvbuff_t *dissect_zbee_secure(tvbuff_t *, packet_info *, proto_tree *, guint);
 extern gboolean zbee_sec_ccm_decrypt(const gchar *, const gchar *, const gchar *, const gchar *, gchar *, guint, guint, guint);
 
+
+/* This is evil; it is used by the Ubiqua file loader to 
+ *  load keys from the Ubiqua dump file format so that
+ *  the Zigbee layer has a hope of decrypting 
+ *  packets correctly 
+ *
+ * key type 0 = LinkKey, 1 = NetworkKey
+ */
+extern gboolean zbee_sec_load_ext_keys(  gchar ** keys,
+                                        const guint *  key_type,
+                                         guint nr_keys );
+
 #endif /* PACKET_ZBEE_SECURITY_H */
 
 /*

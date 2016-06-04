@@ -1974,6 +1974,16 @@ void wtap_deregister_file_type_subtype(const int file_type_subtype);
 WS_DLL_PUBLIC
 int wtap_register_encap_type(const char* name, const char* short_name);
 
+typedef gboolean (*wtap_zbee_ext_keys_fn_t)(gchar **keys, 
+                                            const guint *key_types,
+                                            guint nr_keys);
+    
+WS_DLL_PUBLIC
+void wtap_register_zbee_ext_keys(wtap_zbee_ext_keys_fn_t fn);
+
+WS_DLL_PUBLIC
+wtap_zbee_ext_keys_fn_t wtap_get_zbee_ext_keys(void);
+
 
 /**
  * Wiretap error codes.
