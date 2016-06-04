@@ -56,6 +56,7 @@ struct wtap {
     GArray                      *nrb_hdrs;              /**< holds the Name Res Block's comment/custom_opts, or NULL */
 
     void                        *priv;          /* this one holds per-file state and is free'd automatically by wtap_close() */
+    gchar                       *filename;      /* Holds the name for the file; some types need to reopen. */
     void                        *wslua_data;    /* this one holds wslua state info and is not free'd */
 
     subtype_read_func           subtype_read;

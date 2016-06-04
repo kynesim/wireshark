@@ -358,6 +358,10 @@ extern "C" {
 #define WTAP_FILE_TYPE_SUBTYPE_NETSCALER_3_5                 78
 #define WTAP_FILE_TYPE_SUBTYPE_NETTRACE_3GPP_32_423          79
 #define WTAP_FILE_TYPE_SUBTYPE_MPLOG                         80
+#define WTAP_FILE_TYPE_SUBTYPE_TI_SMARTRF                    81
+#define WTAP_FILE_TYPE_SUBTYPE_UBIQUA_CUBX                   82
+#define WTAP_FILE_TYPE_SUBTYPE_EMBER_ISD                     83
+
 
 #define WTAP_NUM_FILE_TYPES_SUBTYPES  wtap_get_num_file_types_subtypes()
 
@@ -1971,6 +1975,16 @@ void wtap_deregister_file_type_subtype(const int file_type_subtype);
 
 WS_DLL_PUBLIC
 int wtap_register_encap_type(const char* name, const char* short_name);
+
+typedef gboolean (*wtap_zbee_ext_keys_fn_t)(gchar **keys, 
+                                            const guint *key_types,
+                                            guint nr_keys);
+    
+WS_DLL_PUBLIC
+void wtap_register_zbee_ext_keys(wtap_zbee_ext_keys_fn_t fn);
+
+WS_DLL_PUBLIC
+wtap_zbee_ext_keys_fn_t wtap_get_zbee_ext_keys(void);
 
 
 /**

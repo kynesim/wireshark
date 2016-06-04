@@ -42,6 +42,7 @@ NONGENERATED_C_FILES = \
 	daintree-sna.c		\
 	dbs-etherwatch.c	\
 	dct3trace.c		\
+	ember-isd.c		\
 	erf.c			\
 	eyesdn.c		\
 	file_access.c		\
@@ -79,8 +80,10 @@ NONGENERATED_C_FILES = \
 	radcom.c		\
 	snoop.c			\
 	stanag4607.c		\
+	ti-smartrf.c		\
 	tnef.c			\
 	toshiba.c		\
+	ubiqua-cubx.c		\
 	visual.c		\
 	vms.c			\
 	vwr.c           \
@@ -105,6 +108,7 @@ NONGENERATED_HEADER_FILES = \
 	daintree-sna.h		\
 	dbs-etherwatch.h	\
 	dct3trace.h		\
+	ember-isd.h		\
 	erf.h			\
 	eyesdn.h		\
 	file_wrappers.h		\
@@ -144,8 +148,10 @@ NONGENERATED_HEADER_FILES = \
 	radcom.h		\
 	snoop.h			\
 	stanag4607.h		\
+	ti-smartrf.h		\
 	tnef.h			\
 	toshiba.h		\
+	ubiqua-cubx.h		\
 	visual.h		\
 	vms.h			\
 	vwr.h           \

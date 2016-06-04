@@ -47,6 +47,7 @@ typedef struct {
 } wtap_plugin;
 
 static GSList *wtap_plugins = NULL;
+static wtap_zbee_ext_keys_fn_t wtap_zbee_ext_fn;
 
 /*
  * Callback for each plugin found.
@@ -933,7 +934,10 @@ static struct encap_type_info encap_table_base[] = {
 	{ "ITU-T G.7041/Y.1303 Generic Framing Procedure Transparent mode", "gfp-t" },
 
 	/* WTAP_ENCAP_GFP_F */
-	{ "ITU-T G.7041/Y.1303 Generic Framing Procedure Frame-mapped mode", "gfp-f" }
+	{ "ITU-T G.7041/Y.1303 Generic Framing Procedure Frame-mapped mode", "gfp-f" },
+
+	/* WTAP_ENCAP_IP_OVER_IB */
+	{ "IP over IB", "ip-ib" }
 
 };
 
@@ -1202,6 +1206,9 @@ wtap_close(wtap *wth)
 	if (wth->priv != NULL)
 		g_free(wth->priv);
 
+	if (wth->filename != NULL) 
+		g_free(wth->filename);
+
 	if (wth->fast_seek != NULL) {
 		g_ptr_array_foreach(wth->fast_seek, g_fast_seek_item_free, NULL);
 		g_ptr_array_free(wth->fast_seek, TRUE);
@@ -1429,6 +1436,14 @@ wtap_seek_read(wtap *wth, gint64 seek_off,
 	g_assert(phdr->pkt_encap != WTAP_ENCAP_PER_PACKET);
 
 	return TRUE;
+}
+
+void wtap_register_zbee_ext_keys(wtap_zbee_ext_keys_fn_t fn) {
+	wtap_zbee_ext_fn= fn;
+}
+
+wtap_zbee_ext_keys_fn_t wtap_get_zbee_ext_keys(void) {
+	return wtap_zbee_ext_fn;
 }
 
 /*

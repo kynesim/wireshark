@@ -84,6 +84,9 @@
 #include "pcap-encap.h"
 #include "nettrace_3gpp_32_423.h"
 #include "mplog.h"
+#include "ti-smartrf.h"
+#include "ubiqua-cubx.h"
+#include "ember-isd.h"
 
 /*
  * Add an extension, and all compressed versions thereof, to a GSList
@@ -153,7 +156,10 @@ static const struct file_extension_info file_type_extensions_base[] = {
 	{ "MPEG2 transport stream", "mp2t;ts;mpg" },
 	{ "Ixia IxVeriWave .vwr Raw 802.11 Capture", "vwr" },
 	{ "CAM Inspector file", "camins" },
-	{ "JavaScript Object Notation file", "json" }
+	{ "JavaScript Object Notation file", "json" },
+	{ "TI SmartRF Packet Sniffer", "tisn" },
+	{ "Ubiqua Protocol Analyzer", "cubx" },
+	{ "Ember InSight Desktop", "isd" }
 };
 
 #define	N_FILE_TYPE_EXTENSIONS	(sizeof file_type_extensions_base / sizeof file_type_extensions_base[0])
@@ -394,7 +400,14 @@ static struct open_info open_info_base[] = {
 	/* Extremely weak heuristics - put them at the end. */
 	{ "Ixia IxVeriWave .vwr Raw Capture",       OPEN_INFO_HEURISTIC, vwr_open,                 "vwr",      NULL, NULL },
 	{ "CAM Inspector file",                     OPEN_INFO_HEURISTIC, camins_open,              "camins",   NULL, NULL },
-	{ "JavaScript Object Notation",             OPEN_INFO_HEURISTIC, json_open,                "json",     NULL, NULL }
+	{ "JavaScript Object Notation",             OPEN_INFO_HEURISTIC, json_open,                "json",     NULL, NULL },
+	{ "TI SmartRF Packet Sniffer",              OPEN_INFO_HEURISTIC, ti_smartrf_open,          "tisn",     NULL, NULL },
+#if HAVE_SQLITE3
+	{ "Ubiqua Protocol Analyzer",               OPEN_INFO_HEURISTIC, ubiqua_cubx_open,         "cubx",     NULL, NULL },
+#endif
+#if HAVE_ZZIPLIB
+	{ "Ember InSight Desktop",                  OPEN_INFO_HEURISTIC, ember_isd_open,           "isd",      NULL, NULL }
+#endif
 };
 
 /* this is only used to build the dynamic array on load, do NOT use this
@@ -833,6 +846,7 @@ wtap_open_offline(const char *filename, unsigned int type, int *err, char **err_
 	wth->subtype_close = NULL;
 	wth->file_tsprec = WTAP_TSPREC_USEC;
 	wth->priv = NULL;
+	wth->filename = g_strdup(filename);
 	wth->wslua_data = NULL;
 	wth->shb_hdrs = g_array_new(FALSE, FALSE, sizeof(wtap_optionblock_t));
 	shb = wtap_optionblock_create(WTAP_OPTION_BLOCK_NG_SECTION);
@@ -1604,6 +1618,21 @@ static const struct file_type_subtype_info dump_open_table_base[] = {
 
 	/* WTAP_FILE_TYPE_MPLOG */
 	{ "Micropross mplog file", "mplog", "mplog", NULL,
+	  FALSE, FALSE, 0,
+	  NULL, NULL, NULL },
+
+	/* FILE_TYPE_SUBTYPE_TI_SMARTF */
+	{ "TI SmartRF Packet Sniffer", "tismartrf", "tisn", "psd", 
+	  FALSE, FALSE, 0, 
+	  NULL, NULL, NULL },
+	
+	/* FILE_TYPE_SUBTYPE_UBIQUA_CUBX */
+	{ "Ubiqua Protocol Analyzer", "ubiqua", "cubx", NULL,
+	  FALSE, FALSE, 0,
+	  NULL, NULL, NULL },
+	
+	/* FILE_TYPE_SUBTYPE_EMBER_ISD */
+	{ "Ember InSight Desktop", "isd", "isd", NULL,
 	  FALSE, FALSE, 0,
 	  NULL, NULL, NULL }
 };
