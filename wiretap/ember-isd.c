@@ -23,6 +23,7 @@
 #include "config.h"
 #if HAVE_ZZIPLIB
 
+#define DEBUG0 0
 
 #include <glib.h>
 #include <string.h>
@@ -151,8 +152,13 @@ static int parse_packet(char *s, uint64_t *time, int *length, uint8_t *buffer)
 	char tmp[16];
         long long unsigned int ttime;
 
-	if (s[index] == '#')
-		return 0;
+	if (s[index] == '#') {
+#if DEBUG0
+            printf("hash\n");
+#endif
+
+            return 0;
+        }
 
 	if (s[index++] != '[')
 		return -1;
@@ -173,7 +179,8 @@ static int parse_packet(char *s, uint64_t *time, int *length, uint8_t *buffer)
 	next_after(s, &index, ']');
 	next_after(s, &index, '[');
 
-	ret = index;
+        /* Annoyingly, seek points must now be a whole packet buffer */
+	ret = index; 
 
 	if (prepare_packet_buffer(s + index, length, buffer) < 0)
 		ret = -1;
@@ -185,35 +192,63 @@ static int parse_packet(char *s, uint64_t *time, int *length, uint8_t *buffer)
 static int try_read_packet(struct isd_priv *priv, uint64_t *time, int *length, uint8_t *buffer)
 {
 	char *newline;
-	int ret;
+        int ret;
 
 	newline = (char*)memchr(priv->read_buffer, '\n', priv->buf_len);
 	if (newline) {
-		int str_len = ++newline - priv->read_buffer;
-		priv->read_buffer[str_len - 1] = 0;
-		if (priv->read_buffer[str_len - 2] == '\r')
-			priv->read_buffer[str_len - 2] = 0;
-		ret = parse_packet(priv->read_buffer, time, length, buffer);
-		if (ret > 0)
-			ret += priv->cur_offset;
-		priv->buf_len -= str_len;
-		memmove(priv->read_buffer, newline, priv->buf_len);
-		priv->cur_offset += str_len;
+            int str_len = ++newline - priv->read_buffer;
+            priv->read_buffer[str_len - 1] = 0;
+            if (priv->read_buffer[str_len - 2] == '\r')
+                priv->read_buffer[str_len - 2] = 0;
+#if DEBUG0
+            printf("Parsing: %s\n", priv->read_buffer);
+#endif
+
+            ret = parse_packet(priv->read_buffer, time, length, buffer);
+#if DEBUG0
+            printf(".over %d\n", ret);
+#endif
+
+
+            if (ret > 0) {
+                /* If cur_offset is 0, make it 1 to make sure that
+                 *  we don't interpret this as "need more data" 
+                 * 
+                 * @todo Refactor with an aze.
+                 */
+                ret = priv->cur_offset ? priv->cur_offset : 1;
+            }
+            priv->buf_len -= str_len;
+            memmove(priv->read_buffer, newline, priv->buf_len);
+            priv->cur_offset += str_len;
+#if DEBUG0
+            printf("Parsed packet ret = %d \n", ret);
+#endif
+
 	} else {
-		if (priv->buf_len == sizeof(priv->read_buffer))
-			return -1;
-		ret = zzip_file_read(
-			priv->f,
-			priv->read_buffer + priv->buf_len,
-			sizeof(priv->read_buffer) - priv->buf_len
+            if (priv->buf_len == sizeof(priv->read_buffer))
+                return -1;
+            ret = zzip_file_read(
+                priv->f,
+                priv->read_buffer + priv->buf_len,
+                sizeof(priv->read_buffer) - priv->buf_len
 		);
-		if (ret == 0 && priv->buf_len) /* no newline at eof */
-			ret = -1; /* mark as error for this type of files */
-		if (ret > 0) {
-			priv->buf_len += ret;
-			ret = 0;
-		}
-		return ret; 
+            if (ret == 0 && priv->buf_len) {
+#if DEBUG0
+                printf("%s: No newline at EOF.\n", __func__);
+#endif
+
+                /* no newline at eof */
+                ret = -1; /* mark as error for this type of files */
+            }
+            if (ret > 0) {
+                priv->buf_len += ret;
+                ret = 0;
+            }
+#if DEBUG0
+            printf("More data!\n");
+#endif
+
 	}
 
 	return ret;
@@ -238,8 +273,17 @@ wtap_open_return_val ember_isd_open(wtap *wth, int *err, gchar **err_info)
 	static zzip_strings_t my_ext[] = { "", 0 };
         (void) err_info;
 
+#if DEBUG0
+        printf("%s: %d\n", __func__, 0);
+#endif
+
+
 	if (!wth->filename)
 		goto exit_not_isd;
+
+#if DEBUG0
+        printf("%s: %d\n", __func__, 1);
+#endif
 
 	str = g_ascii_strup(wth->filename, -1);
 	if (!g_str_has_suffix(str, ".ISD")) {
@@ -248,11 +292,19 @@ wtap_open_return_val ember_isd_open(wtap *wth, int *err, gchar **err_info)
 	}
 	g_free(str);
 
+#if DEBUG0
+        printf("%s: %d\n", __func__, 2);
+#endif
+
 	if (file_read(&buf, 2, wth->fh) < 2)
 		goto exit_not_isd;
 
 	if (strncmp(buf, "PK", 2))
 		goto exit_not_isd;
+
+#if DEBUG0
+        printf("%s: %d\n", __func__, 3);
+#endif
 
 	priv = (struct isd_priv *)g_malloc(sizeof(struct isd_priv));
 	str = g_strdup_printf("%s/event.log", wth->filename);
@@ -261,21 +313,37 @@ wtap_open_return_val ember_isd_open(wtap *wth, int *err, gchar **err_info)
 	if (!priv->f)
 		goto exit_free_priv;
 
+
+#if DEBUG0
+        printf("%s: %d\n", __func__, 4);
+#endif
+
 	priv->buf_len = 0;
 	priv->cur_offset = 0;
 
 	wth->priv = priv;
 	file_seek(wth->fh, 0, SEEK_SET, err);
 
+#if DEBUG0
+        printf("%s: %d\n", __func__, 5);
+#endif
+
 	/* set up the pointers to the handlers for this file type */
 	wth->subtype_read = ember_isd_read;
 	wth->subtype_seek_read = ember_isd_seek_read;
+
+#if DEBUG0
+        printf("%s: %d\n", __func__, 6);
+#endif
 
 	/* set up for file type */
 	wth->file_type_subtype = WTAP_FILE_TYPE_SUBTYPE_EMBER_ISD;
 	wth->file_encap = WTAP_ENCAP_IEEE802_15_4;
 	wth->file_tsprec = WTAP_TSPREC_USEC;
 
+#if DEBUG0
+        printf("%s: %d\n", __func__, 7);
+#endif
 	return WTAP_OPEN_MINE; /* it's our file */
 
 exit_free_priv:
@@ -292,6 +360,10 @@ ember_isd_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
 	struct  isd_priv *priv = (struct isd_priv *)wth->priv;
 	uint64_t timestamp;
 	int length, ret;
+
+#if DEBUG0
+        printf("%s: %d\n", __func__, 0);
+#endif
 
 	ret = read_packet(priv, &timestamp, &length, priv->packet_buffer);
 
@@ -313,6 +385,9 @@ ember_isd_read(wtap *wth, int *err, gchar **err_info, gint64 *data_offset)
 
 	ws_buffer_assure_space(wth->frame_buffer, length);
 	memcpy(ws_buffer_start_ptr(wth->frame_buffer), priv->packet_buffer, length);
+#if DEBUG0
+        printf("%s: %d : %d\n", __func__, 99, length);
+#endif
 
 	return TRUE;
 }
@@ -326,30 +401,28 @@ static gboolean ember_isd_seek_read(wtap *wth, gint64 seek_off,
                                     gchar **err_info)
 {
     struct isd_priv *priv = (struct isd_priv *)wth->priv;
-    int len;
-    int ret;
     uint64_t timestamp;
-    int length;
+    int length, ret;
+
+#if DEBUG0
+    printf("%s: 001\n", __func__);
+#endif
 
     zzip_seek(priv->f, seek_off, SEEK_SET);
-    zzip_file_read(priv->f, priv->read_buffer, 3);
-    sscanf(priv->read_buffer, "%02x", &len);
-    zzip_file_read(priv->f, priv->read_buffer + 3, len * 3 + 9);
+    priv->buf_len = 0;
+    priv->cur_offset = seek_off;
+
     
-    if (prepare_packet_buffer(priv->read_buffer, &len, priv->packet_buffer) < 0) {
+    ret = read_packet(priv, &timestamp, &length, priv->packet_buffer);
+    
+    if (ret < 0) {
         *err = WTAP_ERR_UNSUPPORTED;
-        *err_info = g_strdup_printf("ember-isd: error while parsing data");
-        return FALSE;
+		*err_info = g_strdup_printf("ember-isd: error while parsing data");
     }
 
-    ret = read_packet(priv, &timestamp, &length, priv->packet_buffer);
-    if (ret < 0) {
-        (*err) = WTAP_ERR_UNSUPPORTED;
-        (*err_info) = g_strdup_printf("ember-isd: error whilst parsing data after seek");
-    }
-    if (ret <= 0) { 
-        return FALSE; 
-    }
+#if DEBUG0
+    printf("%s: 004\n", __func__);
+#endif
 
     phdr->presence_flags = WTAP_HAS_TS;
     phdr->ts.secs = timestamp / 1000000;
@@ -359,6 +432,9 @@ static gboolean ember_isd_seek_read(wtap *wth, gint64 seek_off,
 
     ws_buffer_assure_space(buf, length);
     memcpy(ws_buffer_start_ptr(buf), priv->packet_buffer, length);
+#if DEBUG0
+    printf("%s: 005, %d\n", __func__, length);
+#endif
 
     return TRUE;
 }
